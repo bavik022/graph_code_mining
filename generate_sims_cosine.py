@@ -325,6 +325,8 @@ if __name__ == "__main__":
         })
         
     print(f"Successfully indexed {len(database)} labeled functions.")
+    with open("wl_embeddings_test.pkl", "wb") as f:
+        pickle.dump(database, f)
 
     """sims = defaultdict(list)
     for i in tqdm(range(len(database))):
@@ -343,7 +345,7 @@ if __name__ == "__main__":
     # DictVectorizer converts list of Counters -> Scipy Sparse Matrix (CSR)
     # It automatically handles the string keys (hashes) and maps them to integer indices.
     vectorizer = DictVectorizer(sparse=True, dtype=np.float32)
-    feature_dicts = [d['vector'] for d in database[:10000]]
+    feature_dicts = [d['vector'] for d in database[:50000]]
     X = vectorizer.fit_transform(feature_dicts)
 
     print(f"Vectorized shape: {X.shape} (Rows: Functions, Cols: Unique Subgraphs)")

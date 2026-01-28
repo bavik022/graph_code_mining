@@ -2,6 +2,8 @@ import json
 import re
 import matplotlib.pyplot as plt
 import numpy as np
+import itertools
+import statsmodels
 
 # --- CONFIGURATION ---
 RQ1_FILE = "rq1_distribution.json"
@@ -9,6 +11,7 @@ RESULTS_FILE = "paper_results_disl.json"
 GAS_FILE = "gas_estimates.json"
 PREFIX_TO_REMOVE = "contracts_organized_disl/"
 MIN_SIMILARITY_SCATTER = 0.80
+MAX_SCATTER_POINTS = 300
 
 def main():
     print("--- 1. Loading RQ1 Data (Distribution) ---")
@@ -45,6 +48,10 @@ def main():
     optimization_candidates = 0
     significant_optimizations = 0
     sum_significant_savings = 0.0
+    significant_savings = []
+    positive_savings_count = 0
+    sum_positive_savings = 0.0
+    positive_savings = []
     
     current_query_uid = None
     current_query_gas = 0
@@ -52,7 +59,7 @@ def main():
     try:
         with open(RESULTS_FILE, 'r') as f:
             content = f.read()
-            
+        
         print("Processing results for Scatter Plot & Stats...")
         for m in pattern.finditer(content):
             if m.group(1): # New Key
@@ -86,14 +93,20 @@ def main():
                             # Stats
                             if score >= 0.9:
                                 optimization_candidates += 1
-                                if savings_pct > 10.0:
+                                if savings_pct > 0 and savings_pct<90:
                                     significant_optimizations += 1
                                     sum_significant_savings += savings_pct
+                                    significant_savings.append(savings_pct)
+
+                                if savings_pct > 0 and savings_pct<90:
+                                    positive_savings_count += 1
+                                    sum_positive_savings += savings_pct
+                                    positive_savings.append(savings_pct)
                             
                             # Frontier Map
-                            if score not in max_savings_map:
+                            if score not in max_savings_map and savings_pct < 90:
                                 max_savings_map[score] = savings_pct
-                            else:
+                            elif score in max_savings_map and savings_pct < 90:
                                 if savings_pct > max_savings_map[score]:
                                     max_savings_map[score] = savings_pct
                                     
@@ -103,8 +116,11 @@ def main():
 
     # --- 3. PRINT FINAL STATS ---
     avg_savings_sig = 0
-    if significant_optimizations > 0:
-        avg_savings_sig = sum_significant_savings / significant_optimizations
+    std_savings_sig = 0
+    if positive_savings_count > 0:
+        avg_savings_sig = sum_positive_savings / positive_savings_count
+        if len(positive_savings) > 1:
+            std_savings_sig = np.std(positive_savings, ddof=1)
 
     print("\n" + "="*40)
     print("   QUANTITATIVE RESULTS (Copy to Paper)")
@@ -113,7 +129,8 @@ def main():
     print(f"Pairs Analyzed for Optimization:    {total_pairs_checked}")
     print(f"Optimization Candidates (>0.9):    {optimization_candidates}")
     print(f"Significant Optimizations (>10%):   {significant_optimizations}")
-    print(f"Average Savings (Significant):      {avg_savings_sig:.2f}%")
+    print(f"Average Savings (>0%):              {avg_savings_sig:.2f}%")
+    print(f"Std Dev Savings (>0%):              {std_savings_sig:.2f}%")
     print("="*40 + "\n")
 
     # --- 4. PLOT 1: FULL HISTOGRAM (RQ1) ---
@@ -139,14 +156,36 @@ def main():
     max_savings = [max_savings_map[s] for s in sorted_scores]
 
     plt.figure(figsize=(7, 4))
-    plt.scatter(sorted_scores, max_savings, alpha=0.6, s=20, c='#C44E52', label='Max Achieved Savings', rasterized=True) 
-    
+    x_full = np.array(sorted_scores)
+    y_full = np.array(max_savings)
+
+    # Subsample points for readability if needed.
+    x_plot = x_full
+    y_plot = y_full
+    if len(x_full) > MAX_SCATTER_POINTS:
+        step = int(np.ceil(len(x_full) / MAX_SCATTER_POINTS))
+        x_plot = x_full[::step]
+        y_plot = y_full[::step]
+
+    # LOESS regression to show trend between similarity and gas savings.
+    if len(x_full) >= 2:
+        try:
+            from statsmodels.nonparametric.smoothers_lowess import lowess
+            loess_curve = lowess(y_full, x_full, frac=0.35, it=0, return_sorted=True)
+            plt.plot(loess_curve[:, 0], loess_curve[:, 1], color='#C44E52', linewidth=2.0, label='LOESS Fit')
+        except ImportError:
+            coef = np.polyfit(x_full, y_full, 1)
+            x_fit = np.linspace(x_full.min(), x_full.max(), 200)
+            y_fit = np.polyval(coef, x_fit)
+            plt.plot(x_fit, y_fit, color='#C44E52', linewidth=2.0, label='Linear Fit (statsmodels missing)')
+
+    # Light points for context (optional but useful for density).
+    plt.scatter(x_plot, y_plot, alpha=0.25, s=16, c='#4C72B0', rasterized=True)
+
     plt.xlabel("Semantic Similarity (WL Kernel)")
     plt.ylabel("Max Gas Cost Reduction (%)")
-    plt.axvline(x=0.9, color='blue', linestyle=':', linewidth=1, label="Clone Threshold (0.9)")
-    
-    plt.legend(loc='upper left')
     plt.grid(True, linestyle=':', alpha=0.6)
+    plt.legend()
     plt.tight_layout()
     plt.savefig("fig_gas_max_savings.pdf", dpi=300)
     print("Saved 'fig_gas_max_savings.pdf'")

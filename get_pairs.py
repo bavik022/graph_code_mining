@@ -2,10 +2,10 @@ import re
 import json
 
 # --- CONFIGURATION ---
-RESULTS_FILE = "paper_results_disl_test.json"
-GAS_FILE = "gas_estimates_test.json"
-PREFIX_TO_REMOVE = "test_contracts/"
-MIN_SIMILARITY = 0.90  # High similarity to ensure they look like clones
+RESULTS_FILE = "paper_results_disl.json"
+GAS_FILE = "gas_estimates.json"
+PREFIX_TO_REMOVE = "contracts_organized_disl/"
+MIN_SIMILARITY = 0.80  # High similarity to ensure they look like clones
 MIN_SAVINGS = 1.0    # Significant gas difference to make the example obvious
 
 def main():
@@ -99,6 +99,7 @@ def main():
 
     # Sort by Similarity (descending) to find the "Cleanest" clones
     candidates.sort(key=lambda x: x['similarity'], reverse=True)
+    json.dump(candidates, open("golden_candidates.json", 'w'), indent=2)
     
     print(f"\nFound {len(candidates)} candidates. Here are the Top 10 to inspect:\n")
     
